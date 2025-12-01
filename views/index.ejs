@@ -1,11 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ella Rises</title>
+  <link rel="stylesheet" href="/styles.css"> <!-- optional -->
 </head>
 <body>
-    
+  <header>
+    <h1>Ella Rises</h1>
+  </header>
+
+  <main>
+    <% if (user) { %>
+      <p>Welcome, <%= user.email %>!</p>
+      <nav>
+        <ul>
+          <li><a href="/dashboard">Dashboard</a></li>
+          <li><a href="/logout">Logout</a></li>
+        </ul>
+      </nav>
+    <% } else { %>
+      <p>Welcome, visitor! Please log in to access the dashboard.</p>
+      <a href="/login">Login</a>
+      <a href="/public/visitorDonation">Donate</a>
+    <% } %>
+  </main>
+
+  <footer>
+    <p>&copy; 2025 Ella Rises</p>
+  </footer>
 </body>
 </html>

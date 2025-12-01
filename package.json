@@ -19,6 +19,7 @@
     "colorette": "^2.0.19",
     "commander": "^10.0.1",
     "concat-stream": "^1.6.2",
+    "connect-session-knex": "^3.0.1",
     "content-disposition": "^0.5.4",
     "content-type": "^1.0.5",
     "cookie": "^0.7.1",
@@ -133,7 +134,6 @@
     "vary": "^1.1.2",
     "xtend": "^4.0.2"
   },
-  "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

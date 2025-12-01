@@ -15,8 +15,9 @@ const knex = knexLib({
   connection: {
     host: process.env.DB_HOST || "127.0.0.1",
     user: process.env.DB_USER,
-    password: process.env.DB_PASS,
+    password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
+    port: process.env.DB_PORT || 5432,
   },
 });
 
@@ -25,7 +26,6 @@ const knex = knexLib({
 // --------------------------
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-
 app.use(helmet());
 
 app.use(
@@ -33,10 +33,7 @@ app.use(
     secret: process.env.SESSION_SECRET || "secret-change-this",
     resave: false,
     saveUninitialized: false,
-    store: new KnexSessionStore({
-      knex,
-      tablename: "sessions",
-    }),
+    store: new KnexSessionStore({ knex, tablename: "sessions" }),
     cookie: {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -66,104 +63,185 @@ function requireManager(req, res, next) {
 }
 
 // --------------------------
-// PAGES
+// PUBLIC PAGES
 // --------------------------
 app.get("/", (req, res) => {
-  res.send(`
-    <h1>Ella Rises</h1>
-    ${req.session.user ? `
-      <p>Welcome, ${req.session.user.email}</p>
-      <a href="/dashboard">Dashboard</a><br>
-      <a href="/logout">Logout</a>
-    ` : `
-      <a href="/login">Login</a>
-    `}
-  `);
+  res.render("index", { user: req.session.user });
 });
 
+app.get("/visitor-donation", (req, res) => {
+  res.render("public/visitorDonation");
+});
+
+// --------------------------
+// AUTH ROUTES
+// --------------------------
 app.get("/login", (req, res) => {
-  res.send(`
-    <h2>Login</h2>
-    <form method="POST" action="/login">
-      <input name="email" placeholder="email" required><br>
-      <input name="password" type="password" placeholder="password" required><br>
-      <button>Login</button>
-    </form>
-  `);
+  res.render("auth/login", { error: null });
 });
 
 app.post("/login", async (req, res) => {
-  // Replace with real DB lookup
   const { email, password } = req.body;
 
+  // TODO: replace with real DB auth
   if (email === "admin@test.com" && password === "pass") {
     req.session.user = { id: 1, email, role: "manager" };
     return res.redirect("/dashboard");
   }
 
-  res.send("Invalid login. <a href='/login'>Try again</a>");
+  res.render("auth/login", { error: "Invalid login" });
 });
 
 app.get("/logout", (req, res) => {
-  req.session.destroy(() => {
-    res.redirect("/");
-  });
+  req.session.destroy(() => res.redirect("/"));
 });
 
 // --------------------------
 // DASHBOARD
 // --------------------------
 app.get("/dashboard", requireLogin, (req, res) => {
-  res.send(`
-    <h1>Dashboard</h1>
-    <p>Hello ${req.session.user.email}</p>
-    <ul>
-      <li><a href="/participants">Participants</a></li>
-      <li><a href="/events">Events</a></li>
-      <li><a href="/surveys">Surveys</a></li>
-      <li><a href="/milestones">Milestones</a></li>
-      <li><a href="/donations">Donations</a></li>
-    </ul>
-  `);
+  res.render("dashboard/home", { user: req.session.user });
 });
 
 // --------------------------
-// CRUD ROUTES (SUPER BASIC)
+// USERS (Manager only)
 // --------------------------
+app.get("/users", requireManager, async (req, res) => {
+  const users = await knex("users").select("*").catch(() => []);
+  res.render("users/list", { users });
+});
 
+app.get("/users/add", requireManager, (req, res) => {
+  res.render("users/add");
+});
+
+app.post("/users/add", requireManager, async (req, res) => {
+  await knex("users").insert(req.body);
+  res.redirect("/users");
+});
+
+app.get("/users/edit/:id", requireManager, async (req, res) => {
+  const user = await knex("users").where("id", req.params.id).first();
+  res.render("users/edit", { user });
+});
+
+app.post("/users/edit/:id", requireManager, async (req, res) => {
+  await knex("users").where("id", req.params.id).update(req.body);
+  res.redirect("/users");
+});
+
+// --------------------------
 // PARTICIPANTS
+// --------------------------
 app.get("/participants", requireLogin, async (req, res) => {
-  const rows = await knex("participants").select("*").catch(() => []);
-  res.send(rows);
+  const participants = await knex("participants").select("*").catch(() => []);
+  res.render("participants/list", { participants });
 });
 
-app.post("/participants", requireManager, async (req, res) => {
+app.get("/participants/add", requireManager, (req, res) => {
+  res.render("participants/add");
+});
+
+app.post("/participants/add", requireManager, async (req, res) => {
   await knex("participants").insert(req.body);
   res.redirect("/participants");
 });
 
+app.get("/participants/edit/:id", requireManager, async (req, res) => {
+  const participant = await knex("participants").where("id", req.params.id).first();
+  res.render("participants/edit", { participant });
+});
+
+app.post("/participants/edit/:id", requireManager, async (req, res) => {
+  await knex("participants").where("id", req.params.id).update(req.body);
+  res.redirect("/participants");
+});
+
+// Milestones for participants
+app.get("/participants/milestones/:id", requireManager, async (req, res) => {
+  const milestones = await knex("milestones").where("participant_id", req.params.id);
+  res.render("participants/milestones", { milestones, participantId: req.params.id });
+});
+
+// --------------------------
 // EVENTS
+// --------------------------
 app.get("/events", requireLogin, async (req, res) => {
-  const rows = await knex("events").select("*").catch(() => []);
-  res.send(rows);
+  const events = await knex("events").select("*").catch(() => []);
+  res.render("events/list", { events });
 });
 
+app.get("/events/add", requireManager, (req, res) => {
+  res.render("events/add");
+});
+
+app.post("/events/add", requireManager, async (req, res) => {
+  await knex("events").insert(req.body);
+  res.redirect("/events");
+});
+
+app.get("/events/edit/:id", requireManager, async (req, res) => {
+  const event = await knex("events").where("id", req.params.id).first();
+  res.render("events/edit", { event });
+});
+
+app.post("/events/edit/:id", requireManager, async (req, res) => {
+  await knex("events").where("id", req.params.id).update(req.body);
+  res.redirect("/events");
+});
+
+// --------------------------
 // SURVEYS
+// --------------------------
 app.get("/surveys", requireLogin, async (req, res) => {
-  const rows = await knex("surveys").select("*").catch(() => []);
-  res.send(rows);
+  const surveys = await knex("surveys").select("*").catch(() => []);
+  res.render("surveys/list", { surveys });
 });
 
-// MILESTONES
-app.get("/milestones", requireLogin, async (req, res) => {
-  const rows = await knex("milestones").select("*").catch(() => []);
-  res.send(rows);
+app.get("/surveys/add", requireManager, (req, res) => {
+  res.render("surveys/add");
 });
 
+app.post("/surveys/add", requireManager, async (req, res) => {
+  await knex("surveys").insert(req.body);
+  res.redirect("/surveys");
+});
+
+app.get("/surveys/edit/:id", requireManager, async (req, res) => {
+  const survey = await knex("surveys").where("id", req.params.id).first();
+  res.render("surveys/edit", { survey });
+});
+
+app.post("/surveys/edit/:id", requireManager, async (req, res) => {
+  await knex("surveys").where("id", req.params.id).update(req.body);
+  res.redirect("/surveys");
+});
+
+// --------------------------
 // DONATIONS
+// --------------------------
 app.get("/donations", requireLogin, async (req, res) => {
-  const rows = await knex("donations").select("*").catch(() => []);
-  res.send(rows);
+  const donations = await knex("donations").select("*").catch(() => []);
+  res.render("donations/list", { donations });
+});
+
+app.get("/donations/add", requireManager, (req, res) => {
+  res.render("donations/add");
+});
+
+app.post("/donations/add", requireManager, async (req, res) => {
+  await knex("donations").insert(req.body);
+  res.redirect("/donations");
+});
+
+app.get("/donations/edit/:id", requireManager, async (req, res) => {
+  const donation = await knex("donations").where("id", req.params.id).first();
+  res.render("donations/edit", { donation });
+});
+
+app.post("/donations/edit/:id", requireManager, async (req, res) => {
+  await knex("donations").where("id", req.params.id).update(req.body);
+  res.redirect("/donations");
 });
 
 // --------------------------
