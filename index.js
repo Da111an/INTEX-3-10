@@ -1,526 +1,180 @@
-
-require('dotenv').config();
-
+require("dotenv").config();
 const express = require("express");
 const session = require("express-session");
+const helmet = require("helmet");
+const knexLib = require("knex");
+const KnexSessionStore = require("connect-session-knex")(session);
 
-let path = require("path");
+const app = express();
 
-const multer = require("multer");
-
-let bodyParser = require("body-parser");
-
-let app = express();
-
-app.set("view engine", "ejs");
-
-const uploadRoot = path.join(__dirname, "images");
-
-const uploadDir = path.join(uploadRoot, "uploads");
-const storage = multer.diskStorage({
-    // Save files into our uploads directory
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    // Reuse the original filename so users see familiar names
-    filename: (req, file, cb) => {
-        cb(null, file.originalname);
-    }
+// --------------------------
+// DATABASE (PostgreSQL)
+// --------------------------
+const knex = knexLib({
+  client: "pg",
+  connection: {
+    host: process.env.DB_HOST || "127.0.0.1",
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME,
+  },
 });
 
-// Create the Multer instance that will handle single-file uploads
-const upload = multer({ storage });
+// --------------------------
+// MIDDLEWARE
+// --------------------------
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
-// Expose everything in /images (including uploads) as static assets
-app.use("/images", express.static(uploadRoot));
-
-// process.env.PORT is when you deploy and 3001 is for test (3000 is often in use)
-const port = process.env.PORT || 3001;
-
+app.use(helmet());
 
 app.use(
-    session(
-        {
-    secret: process.env.SESSION_SECRET || 'fallback-secret-key',
+  session({
+    secret: process.env.SESSION_SECRET || "secret-change-this",
     resave: false,
     saveUninitialized: false,
-        }
-    )
+    store: new KnexSessionStore({
+      knex,
+      tablename: "sessions",
+    }),
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 1000 * 60 * 60 * 24,
+    },
+  })
 );
 
-// Content Security Policy middleware - allows localhost connections for development
-// This fixes the CSP violation error with Chrome DevTools
-app.use((req, res, next) => {
-    // Set a permissive CSP for development that allows localhost connections
-    // This allows Chrome DevTools to connect to localhost:3000
-    res.setHeader(
-        'Content-Security-Policy',
-        "default-src 'self' http://localhost:* ws://localhost:* wss://localhost:*; " +
-        "connect-src 'self' http://localhost:* ws://localhost:* wss://localhost:*; " +
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
-        "img-src 'self' data: https:; " +
-        "font-src 'self' https://cdn.jsdelivr.net;"
-    );
-    next();
-});
+// --------------------------
+// VIEW ENGINE
+// --------------------------
+app.set("view engine", "ejs");
 
-const knex = require("knex")({
-    client: "pg",
-    connection: {
-        host : process.env.DB_HOST || "localhost",
-        user : process.env.DB_USER || "postgres",
-        password : process.env.DB_PASSWORD || "admin",
-        database : process.env.DB_NAME || "foodisus",
-        port : process.env.DB_PORT || 5432  // PostgreSQL 16 typically uses port 5434
-    }
-});
+// --------------------------
+// AUTH HELPERS
+// --------------------------
+function requireLogin(req, res, next) {
+  if (!req.session.user) return res.redirect("/login");
+  next();
+}
 
-// Tells Express how to read form data sent in the body of a request
-app.use(express.urlencoded({extended: true}));
+function requireManager(req, res, next) {
+  if (!req.session.user || req.session.user.role !== "manager") {
+    return res.status(403).send("Forbidden");
+  }
+  next();
+}
 
-// Global authentication middleware - runs on EVERY request
-app.use((req, res, next) => {
-    // Skip authentication for login routes
-    if (req.path === '/' || req.path === '/login' || req.path === '/logout') {
-        //continue with the request path
-        return next();
-    }
-    
-    // Check if user is logged in for all other routes
-    if (req.session.isLoggedIn) {
-        //notice no return because nothing below it
-        next(); // User is logged in, continue
-    } 
-    else {
-        res.render("login", { error_message: "Please log in to access this page" });
-    }
-});
-
-// Main page route - notice it checks if they have logged in
-app.get("/login", (req, res) => {
-    // Check if user is logged in
-    if (req.session.isLoggedIn) {        
-        res.render("index");
-    } 
-    else {
-        res.render("login", { error_message: "" });
-    }
-});
-
-app.get("/test", (req, res) => {
-    // Check if user is logged in
-    if (req.session.isLoggedIn) {        
-        res.render("test", {name : "BYU"});
-    } 
-    else {
-        res.render("login", { error_message: "" });
-    }
-});
-
-app.get("/users", (req, res) => {
-    // Check if user is logged in
-    if (req.session.isLoggedIn) { 
-        knex.select().from("users")
-            .then(users => {
-                console.log(`Successfully retrieved ${users.length} users from database`);
-                res.render("displayUsers", {users: users});
-            })
-            .catch((err) => {
-                console.error("Database query error:", err.message);
-                res.render("displayUsers", {
-                    users: [],
-                    error_message: `Database error: ${err.message}. Please check if the 'users' table exists.`
-                });
-            });
-    } 
-    else {
-        res.render("login", { error_message: "" });
-    }
-});
-
+// --------------------------
+// PAGES
+// --------------------------
 app.get("/", (req, res) => {
-    if (req.session.isLoggedIn) {
-        res.render("index");
-    } else {
-        res.redirect("/login");
-    }
+  res.send(`
+    <h1>Ella Rises</h1>
+    ${req.session.user ? `
+      <p>Welcome, ${req.session.user.email}</p>
+      <a href="/dashboard">Dashboard</a><br>
+      <a href="/logout">Logout</a>
+    ` : `
+      <a href="/login">Login</a>
+    `}
+  `);
 });
 
-// This creates attributes in the session object to keep track of user and if they logged in
-app.post("/login", (req, res) => {
-    let sName = req.body.username;
-    let sPassword = req.body.password;
-    
-    knex.select("username", "password")
-        .from('users')
-        .where("username", sName)
-        .andWhere("password", sPassword)
-        .then(users => {
-            // Check if a user was found with matching username AND password
-            if (users.length > 0) {
-                req.session.isLoggedIn = true;
-                req.session.username = sName;
-                res.redirect("/");
-            } else {
-                // No matching user found
-                res.render("login", { error_message: "Invalid login" });
-            }
-        })
-        .catch(err => {
-            console.error("Login error:", err);
-            res.render("login", { error_message: "Invalid login" });
-        });   
+app.get("/login", (req, res) => {
+  res.send(`
+    <h2>Login</h2>
+    <form method="POST" action="/login">
+      <input name="email" placeholder="email" required><br>
+      <input name="password" type="password" placeholder="password" required><br>
+      <button>Login</button>
+    </form>
+  `);
 });
 
-// Logout route
+app.post("/login", async (req, res) => {
+  // Replace with real DB lookup
+  const { email, password } = req.body;
+
+  if (email === "admin@test.com" && password === "pass") {
+    req.session.user = { id: 1, email, role: "manager" };
+    return res.redirect("/dashboard");
+  }
+
+  res.send("Invalid login. <a href='/login'>Try again</a>");
+});
+
 app.get("/logout", (req, res) => {
-    // Get rid of the session object
-    req.session.destroy((err) => {
-        if (err) {
-            console.log(err);
-        }
-        res.redirect("/");
-    });
+  req.session.destroy(() => {
+    res.redirect("/");
+  });
 });
 
-app.get("/addUser", (req, res) => {
-    res.render("addUser");
-});    
-
-app.post("/addUser", upload.single("profileImage"), (req, res) => {
-    // Destructuring grabs them regardless of field order.
-    //const username = req.body.username;
-    //const password = req.body.password;
-
-    const { username, password } = req.body;
-
-    // Basic validation to ensure required fields are present.
-    if (!username || !password) {
-        return res.status(400).render("addUser", { error_message: "Username and password are required." });
-    }
-
-    // Build the relative path to the uploaded file so the 
-    // browser can load it later.
-    const profileImagePath = req.file ? `/images/uploads/${req.file.filename}` : null;
-
-    // Shape the data to match the users table schema.
-    // Object literal - other languages use dictionaries
-    // When the object is inserted with Knex, that value profileImagePath,
-    // becomes the database column profile_image, so the saved path to 
-    // the uploaded image ends up in the profile_image column for that user.
-    const newUser = {
-        username,
-        password,            
-        profile_image: profileImagePath
-    };
-
-    // Insert the record into PostgreSQL and return the user list on success.
-    knex("users")
-        .insert(newUser)
-        .then(() => {
-            res.redirect("/users");
-        })
-        .catch((dbErr) => {
-            console.error("Error inserting user:", dbErr.message);
-            // Database error, so show the form again with a generic message.
-            res.status(500).render("addUser", { error_message: "Unable to save user. Please try again." });
-        });
-});  
-
-app.get("/editUser/:id", (req, res) => {
-    const userId = req.params.id;
-
-    knex("users")
-        .where({ id: userId })
-        .first()
-        .then((user) => {
-            if (!user) {
-                return res.status(404).render("displayUsers", {
-                    users: [],
-                    error_message: "User not found."
-                });
-            }
-
-            res.render("editUser", { user, error_message: "" });
-        })
-        .catch((err) => {
-            console.error("Error fetching user:", err.message);
-            res.status(500).render("displayUsers", {
-                users: [],
-                error_message: "Unable to load user for editing."
-            });
-        });
+// --------------------------
+// DASHBOARD
+// --------------------------
+app.get("/dashboard", requireLogin, (req, res) => {
+  res.send(`
+    <h1>Dashboard</h1>
+    <p>Hello ${req.session.user.email}</p>
+    <ul>
+      <li><a href="/participants">Participants</a></li>
+      <li><a href="/events">Events</a></li>
+      <li><a href="/surveys">Surveys</a></li>
+      <li><a href="/milestones">Milestones</a></li>
+      <li><a href="/donations">Donations</a></li>
+    </ul>
+  `);
 });
 
-app.post("/editUser/:id", upload.single("profileImage"), (req, res) => {
-    const userId = req.params.id;
-    const { username, password, existingImage } = req.body;
+// --------------------------
+// CRUD ROUTES (SUPER BASIC)
+// --------------------------
 
-    if (!username || !password) {
-        return knex("users")
-            .where({ id: userId })
-            .first()
-            .then((user) => {
-                if (!user) {
-                    return res.status(404).render("displayUsers", {
-                        users: [],
-                        error_message: "User not found."
-                    });
-                }
-
-                res.status(400).render("editUser", {
-                    user,
-                    error_message: "Username and password are required."
-                });
-            })
-            .catch((err) => {
-                console.error("Error fetching user:", err.message);
-                res.status(500).render("displayUsers", {
-                    users: [],
-                    error_message: "Unable to load user for editing."
-                });
-            });
-    }
-
-    const profileImagePath = req.file ? `/images/uploads/${req.file.filename}` : existingImage || null;
-
-    const updatedUser = {
-        username,
-        password,
-        profile_image: profileImagePath
-    };
-
-    knex("users")
-        .where({ id: userId })
-        .update(updatedUser)
-        .then((rowsUpdated) => {
-            if (rowsUpdated === 0) {
-                return res.status(404).render("displayUsers", {
-                    users: [],
-                    error_message: "User not found."
-                });
-            }
-
-            res.redirect("/users");
-        })
-        .catch((err) => {
-            console.error("Error updating user:", err.message);
-            knex("users")
-                .where({ id: userId })
-                .first()
-                .then((user) => {
-                    if (!user) {
-                        return res.status(404).render("displayUsers", {
-                            users: [],
-                            error_message: "User not found."
-                        });
-                    }
-
-                    res.status(500).render("editUser", {
-                        user,
-                        error_message: "Unable to update user. Please try again."
-                    });
-                })
-                .catch((fetchErr) => {
-                    console.error("Error fetching user after update failure:", fetchErr.message);
-                    res.status(500).render("displayUsers", {
-                        users: [],
-                        error_message: "Unable to update user."
-                    });
-                });
-        });
+// PARTICIPANTS
+app.get("/participants", requireLogin, async (req, res) => {
+  const rows = await knex("participants").select("*").catch(() => []);
+  res.send(rows);
 });
 
-app.get("/displayHobbies/:userId", (req, res) => {
-    const userId = req.params.userId;
-
-    knex("users")
-        .where({ id: userId })
-        .first()
-        .then((user) => {
-            if (!user) {
-                return res.status(404).render("displayUsers", {
-                    users: [],
-                    error_message: "User not found."
-                });
-            }
-            knex("hobbies")
-                .where({ user_id: userId })
-                .orderBy("id")
-                .then((hobbies) => {
-                    res.render("displayHobbies", {
-                        user,
-                        hobbies,
-                        error_message: "",
-                        success_message: ""
-                    });
-                })
-                .catch((hobbyErr) => {
-                    console.error("Error loading hobbies:", hobbyErr.message);
-                    res.status(500).render("displayUsers", {
-                        users: [],
-                        error_message: "Unable to load hobbies."
-                    });
-                });
-        })
-        .catch((err) => {
-            console.error("Error loading hobbies:", err.message);
-            res.status(500).render("displayUsers", {
-                users: [],
-                error_message: "Unable to load hobbies."
-            });
-        });
+app.post("/participants", requireManager, async (req, res) => {
+  await knex("participants").insert(req.body);
+  res.redirect("/participants");
 });
 
-app.get("/addHobbies/:userId", (req, res) => {
-    const userId = req.params.userId;
-
-    knex("users")
-        .where({ id: userId })
-        .first()
-        .then((user) => {
-            if (!user) {
-                return res.status(404).render("displayUsers", {
-                    users: [],
-                    error_message: "User not found."
-                });
-            }
-            res.render("addHobbies", {
-                user,
-                error_message: ""
-            });
-        })
-        .catch((err) => {
-            console.error("Error loading user:", err.message);
-            res.status(500).render("displayUsers", {
-                users: [],
-                error_message: "Unable to load user."
-            });
-        });
+// EVENTS
+app.get("/events", requireLogin, async (req, res) => {
+  const rows = await knex("events").select("*").catch(() => []);
+  res.send(rows);
 });
 
-app.post("/addHobbies/:userId", (req, res) => {
-    const userId = req.params.userId;
-    const hobby_description = (req.body.hobby_description || "").trim();
-    const date_learned = req.body.date_learned;
-
-    if (!hobby_description || !date_learned) {
-        return knex("users")
-            .where({ id: userId })
-            .first()
-            .then((user) => {
-                if (!user) {
-                    return res.status(404).render("displayUsers", {
-                        users: [],
-                        error_message: "User not found."
-                    });
-                }
-                res.status(400).render("addHobbies", {
-                    user,
-                    error_message: "Hobby description and date learned are required."
-                });
-            })
-            .catch((err) => {
-                console.error("Error validating hobby:", err.message);
-                res.status(500).render("displayUsers", {
-                    users: [],
-                    error_message: "Unable to add hobby."
-                });
-            });
-    }
-
-    knex("hobbies")
-        .insert({ user_id: userId, hobby_description, date_learned })
-        .then(() => {
-            res.redirect(`/displayHobbies/${userId}`);
-        })
-        .catch((err) => {
-            console.error("Error inserting hobby:", err.message);
-            knex("users")
-                .where({ id: userId })
-                .first()
-                .then((user) => {
-                    if (!user) {
-                        return res.status(404).render("displayUsers", {
-                            users: [],
-                            error_message: "User not found."
-                        });
-                    }
-                    res.status(500).render("addHobbies", {
-                        user,
-                        error_message: "Unable to add hobby. Please try again."
-                    });
-                })
-                .catch((userErr) => {
-                    console.error("Error fetching user after hobby insert failure:", userErr.message);
-                    res.status(500).render("displayUsers", {
-                        users: [],
-                        error_message: "Unable to add hobby."
-                    });
-                });
-        });
+// SURVEYS
+app.get("/surveys", requireLogin, async (req, res) => {
+  const rows = await knex("surveys").select("*").catch(() => []);
+  res.send(rows);
 });
 
-app.post("/hobbies/:userId/delete/:hobbyId", (req, res) => {
-    const { userId, hobbyId } = req.params;
-
-    knex("hobbies")
-        .where({ id: hobbyId, user_id: userId })
-        .del()
-        .then(() => {
-            res.redirect(`/displayHobbies/${userId}`);
-        })
-        .catch((err) => {
-            console.error("Error deleting hobby:", err.message);
-            knex("users")
-                .where({ id: userId })
-                .first()
-                .then((user) => {
-                    if (!user) {
-                        return res.status(404).render("displayUsers", {
-                            users: [],
-                            error_message: "User not found."
-                        });
-                    }
-                    knex("hobbies")
-                        .where({ user_id: userId })
-                        .orderBy("id")
-                        .then((hobbies) => {
-                            res.status(500).render("displayHobbies", {
-                                user,
-                                hobbies,
-                                error_message: "Unable to delete hobby. Please try again.",
-                                success_message: ""
-                            });
-                        })
-                        .catch((fetchErr) => {
-                            console.error("Error fetching after delete failure:", fetchErr.message);
-                            res.status(500).render("displayUsers", {
-                                users: [],
-                                error_message: "Unable to delete hobby."
-                            });
-                        });
-                })
-                .catch((userErr) => {
-                    console.error("Error fetching user after delete failure:", userErr.message);
-                    res.status(500).render("displayUsers", {
-                        users: [],
-                        error_message: "Unable to delete hobby."
-                    });
-                });
-        });
+// MILESTONES
+app.get("/milestones", requireLogin, async (req, res) => {
+  const rows = await knex("milestones").select("*").catch(() => []);
+  res.send(rows);
 });
 
-app.post("/deleteUser/:id", (req, res) => {
-    knex("users").where("id", req.params.id).del().then(users => {
-        res.redirect("/users");
-    }).catch(err => {
-        console.log(err);
-        res.status(500).json({err});
-    })
+// DONATIONS
+app.get("/donations", requireLogin, async (req, res) => {
+  const rows = await knex("donations").select("*").catch(() => []);
+  res.send(rows);
 });
 
-app.listen(port, () => {
-    console.log("The server is listening");
+// --------------------------
+// ERROR HANDLE 418 PAGE
+// --------------------------
+app.get("/teapot", (req, res) => {
+  res.status(418).send("I'm a teapot ☕");
 });
+
+// --------------------------
+// RUN SERVER
+// --------------------------
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Server running on port", PORT));
