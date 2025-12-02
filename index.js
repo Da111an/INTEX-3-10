@@ -52,6 +52,7 @@ app.use(
 app.set("view engine", "ejs");
 app.use(express.static(path.join(__dirname, "views", "public")));
 
+app.use("/images", express.static(path.join(__dirname, "images")));
 
 // --------------------------
 // AUTH HELPERS
@@ -87,6 +88,7 @@ app.get("/login", (req, res) => {
 });
 
 
+
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
@@ -96,8 +98,8 @@ app.post("/login", async (req, res) => {
 
   try {
     const user = await knex("participants")
-      .select("email", "password", "role", "first_name")
-      .where({ email: username })   // 👈 match form username → DB email
+      .select("email", "password", "role", "first_name", "id")
+      .where({ email: username })   // <--  match form username to DB email
       .first();
 
     if (!user) {
@@ -112,6 +114,7 @@ app.post("/login", async (req, res) => {
     req.session.isLoggedIn = true;
     req.session.username = user.first_name;
     req.session.role = user.role;
+    req.session.id = user.id;
 
     res.redirect("/");
   } catch (err) {
@@ -127,158 +130,25 @@ app.get("/logout", (req, res) => {
 });
 
 // --------------------------
-// DASHBOARD
+// Participant Routes
 // --------------------------
-app.get("/dashboard", requireLogin, (req, res) => {
-  res.render("dashboard/home", { user: req.session.user });
+app.get("/seeparticipants", requireLogin, requireManager, async (req, res) => {
+  try {
+    const user = await db('participants').select('*').orderBy('participant_id', 'asc');
+    
+    // 2. ONLY render the page once, with the fetched data
+    res.render('participantinfo/seeparticipants.ejs', { 
+        participants: user, // Use a clear variable name like 'participants'
+        role: req.session.level // Pass user role to the view
+    }); 
+    
+  } catch (err) {
+    // 3. Handle errors gracefully and send a single error response
+    console.error('Error fetching users:', err);
+    res.status(500).send('Error fetching user data: ' + err.message);
+  }
+  // The original line 'res.render("participantinfo/seeparticipants.ejs");' is removed.
 });
-
-// --------------------------
-// USERS (Manager only)
-// --------------------------
-app.get("/users", requireManager, async (req, res) => {
-  const users = await knex("users").select("*").catch(() => []);
-  res.render("users/list", { users });
-});
-
-app.get("/users/add", requireManager, (req, res) => {
-  res.render("users/add");
-});
-
-app.post("/users/add", requireManager, async (req, res) => {
-  await knex("users").insert(req.body);
-  res.redirect("/users");
-});
-
-app.get("/users/edit/:id", requireManager, async (req, res) => {
-  const user = await knex("users").where("id", req.params.id).first();
-  res.render("users/edit", { user });
-});
-
-app.post("/users/edit/:id", requireManager, async (req, res) => {
-  await knex("users").where("id", req.params.id).update(req.body);
-  res.redirect("/users");
-});
-
-// --------------------------
-// PARTICIPANTS
-// --------------------------
-app.get("/participants", requireLogin, async (req, res) => {
-  const participants = await knex("participants").select("*").catch(() => []);
-  res.render("participants/list", { participants });
-});
-
-app.get("/participants/add", requireManager, (req, res) => {
-  res.render("participants/add");
-});
-
-app.post("/participants/add", requireManager, async (req, res) => {
-  await knex("participants").insert(req.body);
-  res.redirect("/participants");
-});
-
-app.get("/participants/edit/:id", requireManager, async (req, res) => {
-  const participant = await knex("participants").where("id", req.params.id).first();
-  res.render("participants/edit", { participant });
-});
-
-app.post("/participants/edit/:id", requireManager, async (req, res) => {
-  await knex("participants").where("id", req.params.id).update(req.body);
-  res.redirect("/participants");
-});
-
-// Milestones for participants
-app.get("/participants/milestones/:id", requireManager, async (req, res) => {
-  const milestones = await knex("milestones").where("participant_id", req.params.id);
-  res.render("participants/milestones", { milestones, participantId: req.params.id });
-});
-
-app.post("/participants/milestones/:id", requireManager, async (req, res) => {
-  await knex("participants").where("id", req.params.id).update(req.body);
-  res.redirect("/participants");
-});
-
-// --------------------------
-// EVENTS
-// --------------------------
-app.get("/events", requireLogin, async (req, res) => {
-  const events = await knex("events").select("*").catch(() => []);
-  res.render("events/list", { events });
-});
-
-app.get("/events/add", requireManager, (req, res) => {
-  res.render("events/add");
-});
-
-app.post("/events/add", requireManager, async (req, res) => {
-  await knex("events").insert(req.body);
-  res.redirect("/events");
-});
-
-app.get("/events/edit/:id", requireManager, async (req, res) => {
-  const event = await knex("events").where("id", req.params.id).first();
-  res.render("events/edit", { event });
-});
-
-app.post("/events/edit/:id", requireManager, async (req, res) => {
-  await knex("events").where("id", req.params.id).update(req.body);
-  res.redirect("/events");
-});
-
-// --------------------------
-// SURVEYS
-// --------------------------
-app.get("/surveys", requireLogin, async (req, res) => {
-  const surveys = await knex("surveys").select("*").catch(() => []);
-  res.render("surveys/list", { surveys });
-});
-
-app.get("/surveys/add", requireManager, (req, res) => {
-  res.render("surveys/add");
-});
-
-app.post("/surveys/add", requireManager, async (req, res) => {
-  await knex("surveys").insert(req.body);
-  res.redirect("/surveys");
-});
-
-app.get("/surveys/edit/:id", requireManager, async (req, res) => {
-  const survey = await knex("surveys").where("id", req.params.id).first();
-  res.render("surveys/edit", { survey });
-});
-
-app.post("/surveys/edit/:id", requireManager, async (req, res) => {
-  await knex("surveys").where("id", req.params.id).update(req.body);
-  res.redirect("/surveys");
-});
-
-// --------------------------
-// DONATIONS
-// --------------------------
-app.get("/donations", requireLogin, async (req, res) => {
-  const donations = await knex("donations").select("*").catch(() => []);
-  res.render("donations/list", { donations });
-});
-
-app.get("/donations/add", requireManager, (req, res) => {
-  res.render("donations/add");
-});
-
-app.post("/donations/add", requireManager, async (req, res) => {
-  await knex("donations").insert(req.body);
-  res.redirect("/donations");
-});
-
-app.get("/donations/edit/:id", requireManager, async (req, res) => {
-  const donation = await knex("donations").where("id", req.params.id).first();
-  res.render("donations/edit", { donation });
-});
-
-app.post("/donations/edit/:id", requireManager, async (req, res) => {
-  await knex("donations").where("id", req.params.id).update(req.body);
-  res.redirect("/donations");
-});
-
 // --------------------------
 // ERROR HANDLE 418 PAGE
 // --------------------------
