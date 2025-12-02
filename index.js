@@ -5,6 +5,8 @@ const helmet = require("helmet");
 const knexLib = require("knex");
 const KnexSessionStore = require("connect-session-knex")(session);
 const bcrypt = require("bcryptjs");
+const path = require("path");
+
 
 
 const app = express();
@@ -48,6 +50,8 @@ app.use(
 // VIEW ENGINE
 // --------------------------
 app.set("view engine", "ejs");
+app.use(express.static(path.join(__dirname, "views", "public")));
+
 
 // --------------------------
 // AUTH HELPERS
@@ -163,6 +167,11 @@ app.post("/participants/edit/:id", requireManager, async (req, res) => {
 app.get("/participants/milestones/:id", requireManager, async (req, res) => {
   const milestones = await knex("milestones").where("participant_id", req.params.id);
   res.render("participants/milestones", { milestones, participantId: req.params.id });
+});
+
+app.post("/participants/milestones/:id", requireManager, async (req, res) => {
+  await knex("participants").where("id", req.params.id).update(req.body);
+  res.redirect("/participants");
 });
 
 // --------------------------
