@@ -14,13 +14,13 @@ const app = express();
 // --------------------------
 // DATABASE (PostgreSQL)
 // --------------------------
-const knex = knexLib({
+const knex = require("knex")({
   client: "pg",
   connection: {
-    host: process.env.DB_HOST || "127.0.0.1",
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
+    host: process.env.DB_HOST || "localhost",
+    user: process.env.DB_USER || "postgres",
+    password: process.env.DB_PASSWORD || "admin",
+    database: process.env.DB_NAME || "ellarises",
     port: process.env.DB_PORT || 5432,
   },
 });
@@ -52,6 +52,9 @@ app.use(
 app.set("view engine", "ejs");
 app.use(express.static(path.join(__dirname, "views", "public")));
 
+// Serve static files (CSS, JS, images)
+app.use("/images", express.static(path.join(__dirname, "images"))); //
+
 
 // --------------------------
 // AUTH HELPERS
@@ -72,7 +75,12 @@ function requireManager(req, res, next) {
 // PUBLIC PAGES
 // --------------------------
 app.get("/", (req, res) => {
-  res.render("index", { user: req.session.user });
+  let userRole = "guest"
+  //check if user has a valid session ID
+  
+
+  );
+
 });
 
 app.get("/visitor-donation", (req, res) => {
@@ -86,17 +94,41 @@ app.get("/login", (req, res) => {
   res.render("auth/login", { error: null });
 });
 
-app.post("/login", async (req, res) => {
-  const { email, password } = req.body;
 
-  // TODO: replace with real DB auth
-  if (email === "admin@test.com" && password === "pass") {
-    req.session.user = { id: 1, email, role: "manager" };
-    return res.redirect("/dashboard");
+app.post("/login", async (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.render("login", { error_message: "Missing username or password" });
   }
 
-  res.render("auth/login", { error: "Invalid login" });
+  try {
+    const user = await knex("participants")
+      .select("email", "password", "role", "first_name")
+      .where({ email: username })   // 👈 match form username → DB email
+      .first();
+
+    if (!user) {
+      return res.render("login", { error_message: "Invalid login" });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.render("login", { error_message: "Invalid login" });
+    }
+
+    req.session.isLoggedIn = true;
+    req.session.username = user.first_name;
+    req.session.role = user.role;
+
+    res.redirect("/");
+  } catch (err) {
+    console.error("Login error:", err);
+    res.render("login", { error_message: "Invalid login" });
+  }
 });
+
+
 
 app.get("/logout", (req, res) => {
   req.session.destroy(() => res.redirect("/"));
