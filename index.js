@@ -4,6 +4,8 @@ const session = require("express-session");
 const helmet = require("helmet");
 const knexLib = require("knex");
 const KnexSessionStore = require("connect-session-knex")(session);
+const bcrypt = require("bcryptjs");
+
 
 const app = express();
 
