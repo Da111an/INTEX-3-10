@@ -52,7 +52,10 @@ app.use(
 app.set("view engine", "ejs");
 app.use(express.static(path.join(__dirname, "views", "public")));
 
-app.use("/images", express.static(path.join(__dirname, "images")));
+
+// Serve static files (CSS, JS, images)
+app.use("/images", express.static(path.join(__dirname, "images"))); //
+
 
 // --------------------------
 // AUTH HELPERS
@@ -73,8 +76,12 @@ function requireManager(req, res, next) {
 // PUBLIC PAGES
 // --------------------------
 app.get("/", (req, res) => {
-  res.render("index", { user: req.session.user });
-});
+  let userRole = "guest"
+  //check if user has a valid session ID
+  
+
+  });
+
 
 app.get("/visitor-donation", (req, res) => {
   res.render("public/visitorDonation");
