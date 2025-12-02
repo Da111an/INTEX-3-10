@@ -9,6 +9,7 @@
     "array-flatten": "^1.1.1",
     "async": "^3.2.6",
     "balanced-match": "^1.0.2",
+    "bcryptjs": "^3.0.3",
     "body-parser": "^1.20.3",
     "brace-expansion": "^2.0.2",
     "buffer-from": "^1.1.2",
