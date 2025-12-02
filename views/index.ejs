@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,40 +10,43 @@
 
 <body>
 
-<!-- HEADER -->
 <header class="er-header">
-  <div class="er-header-inner">
 
-    <div class="er-logo-area">
-      <a href="/" class="er-logo-text">Ella Rises</a>
-    </div>
-
-    <nav class="er-nav">
-      <ul>
-        <li><a href="/participants">Participants</a></li>
-        <li><a href="/surveys">Surveys</a></li>
-        <li><a href="/milestones">Milestones</a></li>
-        <li><a href="/donations">Donations</a></li>
-        <li><a href="/dashboard">Dashboard</a></li>
-      </ul>
-    </nav>
-
+  <!-- Centered Logo -->
+  <div class="er-logo-wrap">
+    <img src="/images/ella.jpeg" alt="Ella Rises Logo" class="er-logo">
   </div>
+
+  <!-- Navigation BELOW logo -->
+  <nav class="er-nav">
+    <ul>
+      <li><a href="/participants">Participants</a></li>
+      <li><a href="/surveys">Surveys</a></li>
+      <li><a href="/milestones">Milestones</a></li>
+      <li><a href="/donations">Donations</a></li>
+      <% if (user) { %>
+        <li><a href="/dashboard">Dashboard</a></li>
+      <% } else { %>
+        <li><a href="/login">Login</a></li>
+      <% } %>
+    </ul>
+  </nav>
+
+</header>
+
+
+
 </header>
 
 <!-- HERO -->
-<section class="er-hero">
+<section class="er-about">
   <div class="er-hero-overlay"></div>
   <div class="er-hero-content">
     <h1>Empowering Young Women to Rise</h1>
     <p>Ella Rises uplifts young women through leadership, faith, education, community, and purpose.</p>
 
-    <% if (!user) { %>
-      <div class="er-hero-buttons">
-        <a href="/login" class="er-btn">Login</a>
-        <a href="/public/visitorDonation" class="er-btn-outline">Donate</a>
-      </div>
-    <% } %>
+    
+    
   </div>
 </section>
 
@@ -56,11 +60,7 @@
 
 <!-- USER SECTION -->
 <main class="er-main">
-  <% if (user) { %>
-    <p class="er-welcome">Welcome, <%= user.email %>!</p>
-    <a href="/dashboard" class="er-btn">Go to Dashboard</a>
-    <a href="/logout" class="er-btn-outline">Logout</a>
-  <% } %>
+  
 </main>
 
 <footer class="er-footer">
@@ -69,5 +69,3 @@
 
 </body>
 </html>
-
-
